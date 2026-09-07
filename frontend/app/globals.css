@@ -1,0 +1,70 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #f6f7f9;
+  color: #1a1d21;
+}
+
+main { max-width: 980px; margin: 0 auto; padding: 32px 20px 64px; }
+
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 32px 0 12px; }
+.sub { color: #6b7280; margin: 0 0 24px; font-size: 14px; }
+
+.card {
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.muted { color: #6b7280; font-size: 12px; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+button {
+  background: #1a1d21;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.tag-CORROBORATES { background: #e7f6ec; color: #16653a; border-color: #bfe5cd; }
+.tag-CONTRADICTS  { background: #fdeaea; color: #9b1c1c; border-color: #f6c9c9; }
+.tag-RECONCILES   { background: #eef2ff; color: #3730a3; border-color: #cdd6fb; }
+.tag-UNCERTAIN    { background: #f3f4f6; color: #4b5563; border-color: #e0e2e6; }
+.tag-verified     { background: #e7f6ec; color: #16653a; }
+.tag-unverified   { background: #fff7e6; color: #92610a; }
+
+.evidence {
+  border-left: 3px solid #d7dbe0;
+  padding: 6px 0 6px 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+.pane { background: #fafbfc; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; }
+
+.why { margin-top: 12px; font-size: 14px; background: #fbfbfc; border-radius: 8px; padding: 10px 12px; }
+.error { background: #fdeaea; color: #9b1c1c; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+.link { background: none; color: #2563eb; padding: 0; font-size: 12px; text-decoration: underline; }
