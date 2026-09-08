@@ -12,6 +12,10 @@ It is not a chatbot. There is no chat box — only documents, facts, evidence an
 Nothing is keyed off filenames or hard-coded schemas: what counts as a fact is decided per
 chunk by the model, and every field except subject/predicate/value is optional.
 
+## Demo
+
+[Watch the demo video on Google Drive](https://drive.google.com/file/d/1lj6qw4QijGE0et0uRyvF0uWQcu7G1YxJ/view?usp=sharing)
+
 ## Stack
 
 | Layer     | Choice                                        |
