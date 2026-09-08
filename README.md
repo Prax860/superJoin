@@ -14,10 +14,10 @@ It is not a chatbot. There is no chat box, only documents, facts, evidence and r
 
 | Layer     | Choice                                        |
 |-----------|-----------------------------------------------|
-| Frontend  | Next.js (App Router), React, TypeScript       |
+| Frontend  | Next.js (App Router), React, TypeScript, Tailwind v4, Radix UI, anime.js |
 | Backend   | Python, FastAPI, PyMuPDF                      |
-| LLM       | Groq (default) or Gemini, via LangChain       |
-| Embedding | Gemini `gemini-embedding-001`, 768-dim output |
+| LLM       | Pluggable: Ollama / Groq / OpenAI / Gemini    |
+| Embedding | `BAAI/bge-base-en-v1.5`, local, 768 dims      |
 | Database  | Supabase PostgreSQL + pgvector                |
 
 ## Setup
@@ -28,6 +28,8 @@ It is not a chatbot. There is no chat box, only documents, facts, evidence and r
 2. Open **SQL Editor** and run the contents of [backend/schema.sql](backend/schema.sql).
    It enables `pgvector`, creates the `documents`, `facts`, `evidence` and `relationships`
    tables, and creates the `match_facts` similarity-search function.
+   (If you built the database with an older 768-dim embedding column, run
+   [backend/migrate_embeddings_384.sql](backend/migrate_embeddings_384.sql) once instead.)
 3. From **Project Settings > API**, copy the **Project URL** (`https://<ref>.supabase.co` -
    not the Postgres connection string) and a secret API key.
 
@@ -40,31 +42,33 @@ cp .env.example .env
 Fill in:
 
 ```
-LLM_PROVIDER=groq         # groq | gemini
-GROQ_API_KEY=...          # https://console.groq.com/keys
-GEMINI_API_KEY=...        # https://aistudio.google.com/apikey
+LLM_PROVIDER=ollama       # ollama | groq | openai | gemini
 SUPABASE_URL=...
-SUPABASE_KEY=...          # secret / service_role key, backend only
+SUPABASE_KEY=...          # secret key, backend only
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-All keys are read by the backend only and are never sent to the browser.
+**Swapping the model provider is one env var.** `LLM_PROVIDER` selects who does the
+reasoning, and only that provider's key is required:
 
-Groq model IDs change as models are retired - if you see `model_not_found`, list what your key
-can use with:
+| `LLM_PROVIDER` | Key needed | Package | Default model |
+|----------------|------------|---------|---------------|
+| `ollama`       | none       | `langchain-ollama` | `llama3.2` |
+| `groq`         | `GROQ_API_KEY` | `langchain-groq` | `openai/gpt-oss-120b` |
+| `openai`       | `OPENAI_API_KEY` | `langchain-openai` | `gpt-4o-mini` |
+| `gemini`       | `GEMINI_API_KEY` | `langchain-google-genai` | `gemini-3.6-flash` |
 
-```bash
-curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
-```
+Providers are built lazily in [llm.py](backend/app/llm/llm.py), so you only install the package
+you actually use. Adding another provider is one builder function plus one entry in
+`config.PROVIDER_KEYS`. Nothing above that module knows which provider is active.
 
-and set `GROQ_MODEL` in `.env` accordingly.
+`ollama` is the default: it runs locally, needs no key and has no quota. Install
+[Ollama](https://ollama.com), then `ollama pull llama3.2` and leave the app running.
 
-**Why two providers.** Fact extraction and comparison run on Groq, whose free tier allows
-roughly a thousand requests a day; Gemini's free tier stops at 20 per model per day, which is
-not enough to demo a couple of uploads. Groq has no embeddings API, so embeddings still come
-from Gemini - those use a separate and much larger quota. Set `LLM_PROVIDER=gemini` to run
-everything on Gemini instead; the code path is identical
-([llm.py](backend/app/llm/llm.py)).
+**Embeddings never change.** They always run locally with `BAAI/bge-base-en-v1.5` through
+sentence-transformers - no key, no quota, no network call - so switching the chat provider does
+not invalidate stored vectors. The weights (~440 MB) download once and cache in
+`~/.cache/huggingface`.
 
 ### 3. Backend
 
@@ -122,7 +126,8 @@ Processing is synchronous - no queues, no workers.
    lakh, million, crore, billion, trillion - plus currency and percent, and stores a
    `normalized_value` in a base unit. `$5 billion` and `$5,000 million` both become
    `5e9 USD`. The original string is always preserved in `facts.value`.
-5. **Retrieval.** Each fact is embedded and matched against stored facts with the `match_facts`
+5. **Retrieval.** Each fact is embedded locally with `bge-small-en-v1.5` (384-dim, normalized
+   for cosine) and matched against stored facts with the `match_facts`
    pgvector function (cosine distance), excluding the current document. Only the top 3 candidates
    per fact are kept, and anything below a similarity threshold is dropped without asking the
    model - never every fact against every other fact.
@@ -163,9 +168,10 @@ a contradiction therefore cannot be established.
 
 ## Limitations
 
-- Free tiers are rate limited, so an upload is deliberately cheap: at most `MAX_CHUNKS`
-  extraction calls plus **one** call for all comparisons. Gemini's free tier is only 20
-  requests per day per model, which is why Groq is the default reasoning provider.
+- Groq's free tier is rate limited, so an upload is deliberately cheap: at most `MAX_CHUNKS`
+  extraction calls plus **one** call for all comparisons. Embeddings are local and unlimited.
+- Changing `EMBEDDING_MODEL` changes the vector size, and vectors from different models are not
+  comparable. Update `vector(N)` in `schema.sql` to match and re-upload the documents.
 - Prototype scale: only the first 40 pages and 6 chunks of a PDF are sent to the LLM
   (`MAX_PAGES` / `MAX_CHUNKS` in [config.py](backend/app/config.py)), so long filings are only
   partially covered. Raise the limits at the cost of time and tokens.

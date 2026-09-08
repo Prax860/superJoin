@@ -1,13 +1,18 @@
 """LLM access through LangChain: structured fact extraction, comparison, embeddings.
 
-Reasoning calls go to Groq or Gemini (set LLM_PROVIDER). Embeddings always go to
-Gemini, because Groq does not serve an embeddings API.
+Reasoning (extraction and comparison) goes to whichever provider LLM_PROVIDER
+names - ollama, groq, openai or gemini. Everything above this module works
+against the same two functions regardless.
+
+Embeddings always run locally with sentence-transformers, so switching the chat
+provider never changes the stored vectors.
 """
+from functools import lru_cache
 from typing import List, Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from pydantic import BaseModel, Field
 
 from app import config
@@ -52,37 +57,97 @@ class Judgements(BaseModel):
 # --------------------------------------------------------------------------
 # Models
 # --------------------------------------------------------------------------
-def _chat() -> BaseChatModel:
-    """The reasoning model, chosen by LLM_PROVIDER."""
-    config.require_env()
-    if config.LLM_PROVIDER == "groq":
-        from langchain_groq import ChatGroq
+# Each builder is imported lazily, so you only need the package for the
+# provider you actually use. Adding a provider means adding one function here
+# and one entry in config.PROVIDER_KEYS.
+def _build_ollama() -> BaseChatModel:
+    from langchain_ollama import ChatOllama
 
-        return ChatGroq(
-            model=config.GROQ_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0,
-        )
-
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    return ChatGoogleGenerativeAI(
-        model=config.GEMINI_CHAT_MODEL,
-        google_api_key=config.GEMINI_API_KEY,
+    return ChatOllama(
+        model=config.OLLAMA_MODEL,
+        base_url=config.OLLAMA_BASE_URL,
         temperature=0,
+        num_predict=config.LLM_MAX_TOKENS or None,
     )
 
 
-def _embeddings() -> GoogleGenerativeAIEmbeddings:
-    config.require_env()
-    return GoogleGenerativeAIEmbeddings(
-        model=config.EMBEDDING_MODEL,
+def _build_groq() -> BaseChatModel:
+    from langchain_groq import ChatGroq
+
+    return ChatGroq(
+        model=config.GROQ_MODEL,
+        api_key=config.GROQ_API_KEY,
+        temperature=0,
+        max_tokens=config.LLM_MAX_TOKENS or None,
+        max_retries=5,  # rides out per-minute rate limits
+    )
+
+
+def _build_openai() -> BaseChatModel:
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        model=config.OPENAI_MODEL,
+        api_key=config.OPENAI_API_KEY,
+        temperature=0,
+        max_tokens=config.LLM_MAX_TOKENS or None,
+    )
+
+
+def _build_gemini() -> BaseChatModel:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    return ChatGoogleGenerativeAI(
+        model=config.GEMINI_MODEL,
         google_api_key=config.GEMINI_API_KEY,
+        temperature=0,
+        max_output_tokens=config.LLM_MAX_TOKENS or None,
+    )
+
+
+BUILDERS = {
+    "ollama": _build_ollama,
+    "groq": _build_groq,
+    "openai": _build_openai,
+    "gemini": _build_gemini,
+}
+
+# pip package that provides each builder, for a readable error message.
+PACKAGES = {
+    "ollama": "langchain-ollama",
+    "groq": "langchain-groq",
+    "openai": "langchain-openai",
+    "gemini": "langchain-google-genai",
+}
+
+
+def _chat() -> BaseChatModel:
+    """The chat model for extraction and comparison, per LLM_PROVIDER."""
+    config.require_env()
+    try:
+        return BUILDERS[config.LLM_PROVIDER]()
+    except ImportError as exc:
+        package = PACKAGES.get(config.LLM_PROVIDER, "the provider package")
+        raise RuntimeError(
+            f"LLM_PROVIDER is '{config.LLM_PROVIDER}' but {package} is not installed. "
+            f"Run: pip install {package}"
+        ) from exc
+
+
+@lru_cache(maxsize=1)
+def _embeddings() -> HuggingFaceEmbeddings:
+    """Local embedding model. Loaded once and reused - loading takes a few seconds."""
+    return HuggingFaceEmbeddings(
+        model_name=config.EMBEDDING_MODEL,
+        # bge models are trained for cosine similarity on normalized vectors,
+        # which is what the pgvector index uses.
+        encode_kwargs={"normalize_embeddings": True},
     )
 
 
 def embed(texts: List[str]) -> List[List[float]]:
-    return _embeddings().embed_documents(texts, output_dimensionality=config.EMBEDDING_DIM)
+    """Vectors for pgvector retrieval. Runs locally - Groq has no embeddings API."""
+    return _embeddings().embed_documents(texts)
 
 
 # --------------------------------------------------------------------------
@@ -100,7 +165,14 @@ EXTRACTION_PROMPT = ChatPromptTemplate.from_messages(
             "- page_number MUST be the [PAGE n] marker the evidence appears under.\n"
             "- Fill time_period, geography, scope, unit and qualifiers only when the document "
             "states or clearly implies them. Leave them empty otherwise - do not guess.\n"
-            "- Return at most {max_facts} of the most meaningful facts.",
+            "- Return at most {max_facts} of the most meaningful facts.\n"
+            "- Keep evidence_text to a single sentence, under 200 characters.\n\n"
+            "Keep the fields separate. For the sentence "
+            "'Revenue from operations for FY2024 stood at Rs 8,142 crore' the fact is:\n"
+            "  subject='Delhivery', predicate='revenue from operations', "
+            "value='8,142', unit='INR crore', time_period='FY2024'\n"
+            "The predicate is the NAME of the metric only - never put the number in it, "
+            "and never put a number in value that does not appear in the text.",
         ),
         ("human", "Document: {filename}\n\nPage text:\n{chunk}"),
     ]
@@ -123,17 +195,21 @@ COMPARISON_PROMPT = ChatPromptTemplate.from_messages(
             "difference (different period, region, segment, definition, unit).\n"
             "- UNCERTAIN: not enough information to decide, or the facts are unrelated.\n\n"
             "A different number is NOT automatically a contradiction. Judge EVERY pair you are "
-            "given, return exactly one judgement per pair_id, and explain each decision in one "
-            "or two sentences.",
+            "given, return exactly one judgement per pair_id, and keep each explanation to "
+            "one sentence under 160 characters.",
         ),
         ("human", "{pairs}"),
     ]
 )
 
 
-def extract_facts(filename: str, chunk: str, max_facts: int = 8) -> List[ExtractedFact]:
+def extract_facts(filename: str, chunk: str, max_facts: int = 0) -> List[ExtractedFact]:
     chain = EXTRACTION_PROMPT | _chat().with_structured_output(ExtractedFacts)
-    result = chain.invoke({"filename": filename, "chunk": chunk, "max_facts": max_facts})
+    result = chain.invoke({
+        "filename": filename,
+        "chunk": chunk,
+        "max_facts": max_facts or config.MAX_FACTS_PER_CHUNK,
+    })
     return list(result.facts) if result else []
 
 

@@ -1,10 +1,13 @@
 """Fact extraction, evidence verification and value normalization."""
+import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
 from app import config
 from app.llm import llm
 from app.services import pdf_service
+
+log = logging.getLogger(__name__)
 
 # Multipliers that appear in Indian and international reporting.
 MAGNITUDES = {
@@ -79,8 +82,11 @@ def verify_evidence(
     """Check the quote really exists in the PDF text.
 
     Returns (verified, actual_page). If the quote is found on a different page,
-    the real page number is used instead of the one Gemini reported.
+    the real page number is used instead of the one the model reported.
     """
+    # Models sometimes copy our "[PAGE n]" chunk marker into the quote. That
+    # marker is ours, not the document's, so strip it before matching.
+    evidence_text = re.sub(r"\[PAGE\s*\d+\]", " ", evidence_text or "", flags=re.I)
     quote = _normalize_ws(evidence_text)
     if len(quote) < 15:
         return False, claimed_page
@@ -104,8 +110,12 @@ def verify_evidence(
 # --------------------------------------------------------------------------
 # Orchestration
 # --------------------------------------------------------------------------
-def extract_document_facts(filename: str, pages: List[Dict]) -> List[Dict]:
-    """Run Gemini over the document chunks and return verified fact dicts."""
+def extract_document_facts(filename: str, pages: List[Dict]) -> Tuple[List[Dict], List[str]]:
+    """Run the LLM over the document chunks.
+
+    Returns (facts, errors). A chunk that fails does not kill the upload, but the
+    caller is told about it so a partial result is never reported as a full one.
+    """
     page_map = pdf_service.pages_as_map(pages)
     chunks = pdf_service.build_chunks(pages)
 
@@ -116,6 +126,7 @@ def extract_document_facts(filename: str, pages: List[Dict]) -> List[Dict]:
         try:
             extracted = llm.extract_facts(filename, chunk["text"])
         except Exception as exc:  # a single bad chunk should not kill the upload
+            log.warning("Fact extraction failed on pages %s: %s", chunk["page_numbers"], exc)
             errors.append(str(exc))
             continue
 
@@ -148,8 +159,8 @@ def extract_document_facts(filename: str, pages: List[Dict]) -> List[Dict]:
             )
 
     if not facts and errors:
-        raise RuntimeError(f"Gemini fact extraction failed: {errors[0]}")
-    return facts
+        raise RuntimeError(f"Fact extraction failed: {errors[0]}")
+    return facts, errors
 
 
 def fact_to_text(fact: Dict) -> str:

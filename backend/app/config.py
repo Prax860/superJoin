@@ -11,55 +11,93 @@ load_dotenv()  # also allow backend/.env
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-# Which provider answers the reasoning calls (fact extraction and comparison):
-# "groq" or "gemini". Groq's free tier is far more generous than Gemini's.
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+# --------------------------------------------------------------------------
+# Reasoning provider (fact extraction and comparison)
+#
+# Swap providers with one env var - the rest of the app never changes:
+#   LLM_PROVIDER=ollama   local, free, no key      (needs the Ollama app running)
+#   LLM_PROVIDER=groq     fast, free tier          (GROQ_API_KEY)
+#   LLM_PROVIDER=openai                            (OPENAI_API_KEY)
+#   LLM_PROVIDER=gemini                            (GEMINI_API_KEY)
+#
+# Each provider needs its own LangChain package; see requirements.txt.
+# --------------------------------------------------------------------------
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
 
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# Groq's free tier caps tokens-per-day PER MODEL (200k) and, on some models,
+# output tokens per minute. If you hit a 429, switch GROQ_MODEL for a fresh
+# budget: openai/gpt-oss-120b, qwen/qwen3.8-27b, qwen/qwen3.6-27b.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.6-flash")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-# Embeddings always come from Gemini: Groq does not serve an embeddings API.
-# Embedding requests use a separate, much larger quota than chat requests.
-EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
-# gemini-embedding-001 returns 3072 dims by default; we ask for 768 to match
-# the vector(768) column in schema.sql (pgvector ivfflat caps out at 2000).
-EMBEDDING_DIM = int(os.getenv("GEMINI_EMBEDDING_DIM", "768"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+
+# Cap on output tokens per call. Keeps hosted providers inside per-minute
+# limits and stops a local model from rambling. 0 means "no explicit cap".
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "900"))
+MAX_FACTS_PER_CHUNK = int(os.getenv("MAX_FACTS_PER_CHUNK", "4"))
+
+# Which env var holds the key for each provider (ollama needs none).
+PROVIDER_KEYS = {
+    "ollama": None,
+    "groq": "GROQ_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+
+# Embeddings always run locally with sentence-transformers, independently of
+# LLM_PROVIDER. No key and no quota; the weights (~440 MB) are downloaded
+# once on first use and cached in ~/.cache/huggingface.
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
+# bge-base-en-v1.5 outputs 768 dims - this must match the vector(768)
+# column in schema.sql. Changing the model means changing both.
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "768"))
 
 # How many pages of a PDF we send to the LLM, and how many similar facts we
 # compare a new fact against. Kept small so a demo upload stays fast.
 MAX_PAGES = int(os.getenv("MAX_PAGES", "40"))
-CHUNK_CHARS = int(os.getenv("CHUNK_CHARS", "6000"))
+CHUNK_CHARS = int(os.getenv("CHUNK_CHARS", "4500"))
 MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "6"))
 TOP_K_SIMILAR = int(os.getenv("TOP_K_SIMILAR", "3"))
 MAX_COMPARED_FACTS = int(os.getenv("MAX_COMPARED_FACTS", "25"))
 # Candidates below this cosine similarity are not worth asking the LLM about.
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.75"))
 # All pairs are judged in ONE LLM call, so this caps the size of that prompt.
-MAX_PAIRS = int(os.getenv("MAX_PAIRS", "15"))
+MAX_PAIRS = int(os.getenv("MAX_PAIRS", "10"))
 
 
 def chat_model_name() -> str:
-    """The model actually used for extraction and comparison."""
-    return GROQ_MODEL if LLM_PROVIDER == "groq" else GEMINI_CHAT_MODEL
+    """The model actually used, whichever provider is selected."""
+    return {
+        "ollama": OLLAMA_MODEL,
+        "groq": GROQ_MODEL,
+        "openai": OPENAI_MODEL,
+        "gemini": GEMINI_MODEL,
+    }.get(LLM_PROVIDER, OLLAMA_MODEL)
 
 
 def require_env() -> None:
-    required = [
-        ("SUPABASE_URL", SUPABASE_URL),
-        ("SUPABASE_KEY", SUPABASE_KEY),
-        # Needed for embeddings regardless of the chat provider.
-        ("GEMINI_API_KEY", GEMINI_API_KEY),
-    ]
-    if LLM_PROVIDER == "groq":
-        required.append(("GROQ_API_KEY", GROQ_API_KEY))
+    if LLM_PROVIDER not in PROVIDER_KEYS:
+        raise RuntimeError(
+            f"LLM_PROVIDER must be one of {sorted(PROVIDER_KEYS)}, got '{LLM_PROVIDER}'"
+        )
+
+    required = [("SUPABASE_URL", SUPABASE_URL), ("SUPABASE_KEY", SUPABASE_KEY)]
+
+    # Only the selected provider's key is required. Ollama needs none.
+    key_name = PROVIDER_KEYS[LLM_PROVIDER]
+    if key_name:
+        required.append((key_name, globals().get(key_name, "")))
 
     missing = [name for name, value in required if not value]
     if missing:
         raise RuntimeError(
             "Missing environment variables: " + ", ".join(missing) + ". See .env.example"
         )
-    if LLM_PROVIDER not in ("groq", "gemini"):
-        raise RuntimeError(f"LLM_PROVIDER must be 'groq' or 'gemini', got '{LLM_PROVIDER}'")

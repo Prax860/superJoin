@@ -1,70 +1,406 @@
-* { box-sizing: border-box; }
+@import "tailwindcss";
 
-body {
-  margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: #f6f7f9;
-  color: #1a1d21;
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------ *
+ * Design tokens
+ * Light = cool near-white slate, vivid ultramarine, teal support
+ * Dark  = ink navy, electric indigo, cyan support
+ * ------------------------------------------------------------------ */
+:root {
+  --background: oklch(0.976 0.006 262);
+  --background-deep: oklch(0.941 0.012 264);
+  --foreground: oklch(0.205 0.042 266);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.205 0.042 266);
+  --card-border: oklch(0.902 0.014 264);
+
+  --muted: oklch(0.958 0.008 262);
+  --muted-foreground: oklch(0.505 0.031 264);
+
+  --primary: oklch(0.525 0.198 268);
+  --primary-foreground: oklch(0.99 0.004 260);
+  --primary-soft: oklch(0.932 0.046 268);
+
+  --accent: oklch(0.672 0.126 187);
+  --accent-foreground: oklch(0.33 0.09 195);
+
+  --ring: oklch(0.565 0.185 268);
+  --border: oklch(0.902 0.014 264);
+  --input: oklch(0.918 0.014 264);
+
+  --success: oklch(0.585 0.128 172);
+  --success-soft: oklch(0.942 0.042 176);
+  --danger: oklch(0.585 0.182 30);
+  --danger-soft: oklch(0.948 0.040 32);
+  --info: oklch(0.552 0.192 288);
+  --info-soft: oklch(0.938 0.044 288);
+  --neutral: oklch(0.505 0.026 264);
+  --neutral-soft: oklch(0.945 0.010 264);
+
+  --shadow-color: 264 42% 26%;
+  --grain-opacity: 0.03;
+  --grid-opacity: 0.05;
+  --radius: 0.875rem;
 }
 
-main { max-width: 980px; margin: 0 auto; padding: 32px 20px 64px; }
+.dark {
+  --background: oklch(0.158 0.038 266);
+  --background-deep: oklch(0.118 0.034 267);
+  --foreground: oklch(0.957 0.012 258);
 
-h1 { font-size: 24px; margin: 0 0 4px; }
-h2 { font-size: 17px; margin: 32px 0 12px; }
-.sub { color: #6b7280; margin: 0 0 24px; font-size: 14px; }
+  --card: oklch(0.216 0.038 265);
+  --card-foreground: oklch(0.957 0.012 258);
+  --card-border: oklch(0.302 0.042 265);
 
-.card {
-  background: #fff;
-  border: 1px solid #e4e7eb;
-  border-radius: 10px;
-  padding: 16px;
-  margin-bottom: 12px;
+  --muted: oklch(0.259 0.036 265);
+  --muted-foreground: oklch(0.712 0.030 262);
+
+  --primary: oklch(0.702 0.158 268);
+  --primary-foreground: oklch(0.142 0.042 266);
+  --primary-soft: oklch(0.322 0.078 268);
+
+  --accent: oklch(0.842 0.142 182);
+  --accent-foreground: oklch(0.16 0.05 190);
+
+  --ring: oklch(0.702 0.158 268);
+  --border: oklch(0.302 0.042 265);
+  --input: oklch(0.326 0.042 265);
+
+  --success: oklch(0.826 0.138 172);
+  --success-soft: oklch(0.298 0.062 176);
+  --danger: oklch(0.722 0.158 32);
+  --danger-soft: oklch(0.318 0.078 32);
+  --info: oklch(0.742 0.152 290);
+  --info-soft: oklch(0.312 0.072 288);
+  --neutral: oklch(0.742 0.022 262);
+  --neutral-soft: oklch(0.288 0.030 265);
+
+  --shadow-color: 266 60% 3%;
+  --grain-opacity: 0.05;
+  --grid-opacity: 0.09;
 }
 
-.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.muted { color: #6b7280; font-size: 12px; }
-.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+@theme inline {
+  --color-background: var(--background);
+  --color-background-deep: var(--background-deep);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-card-border: var(--card-border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-neutral: var(--neutral);
+  --color-neutral-soft: var(--neutral-soft);
 
-button {
-  background: #1a1d21;
-  color: #fff;
-  border: 0;
-  border-radius: 8px;
-  padding: 9px 16px;
-  font-size: 14px;
-  cursor: pointer;
+  --font-display: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-jb), ui-monospace, Menlo, Consolas, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --animate-drift: drift 26s ease-in-out infinite;
+  --animate-drift-slow: drift 38s ease-in-out infinite reverse;
+  --animate-shimmer: shimmer 2.1s linear infinite;
+  --animate-pulse-ring: pulse-ring 2.4s ease-out infinite;
+  --animate-sweep: sweep 22s linear infinite;
+  --animate-grid-pan: grid-pan 34s linear infinite;
+  --animate-beam: beam 9s ease-in-out infinite;
 }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.tag {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-}
-.tag-CORROBORATES { background: #e7f6ec; color: #16653a; border-color: #bfe5cd; }
-.tag-CONTRADICTS  { background: #fdeaea; color: #9b1c1c; border-color: #f6c9c9; }
-.tag-RECONCILES   { background: #eef2ff; color: #3730a3; border-color: #cdd6fb; }
-.tag-UNCERTAIN    { background: #f3f4f6; color: #4b5563; border-color: #e0e2e6; }
-.tag-verified     { background: #e7f6ec; color: #16653a; }
-.tag-unverified   { background: #fff7e6; color: #92610a; }
-
-.evidence {
-  border-left: 3px solid #d7dbe0;
-  padding: 6px 0 6px 10px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: #374151;
-  white-space: pre-wrap;
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(4%, -6%, 0) scale(1.12);
+  }
+  66% {
+    transform: translate3d(-5%, 4%, 0) scale(0.94);
+  }
 }
 
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-@media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
-.pane { background: #fafbfc; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; }
+@keyframes sweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
 
-.why { margin-top: 12px; font-size: 14px; background: #fbfbfc; border-radius: 8px; padding: 10px 12px; }
-.error { background: #fdeaea; color: #9b1c1c; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
-.link { background: none; color: #2563eb; padding: 0; font-size: 12px; text-decoration: underline; }
+@keyframes grid-pan {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 72px 72px;
+  }
+}
+
+@keyframes beam {
+  0%,
+  100% {
+    opacity: 0.16;
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    opacity: 0.42;
+    transform: translateY(-3%) scaleY(1.14);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-105%);
+  }
+  100% {
+    transform: translateX(255%);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -180% 0;
+  }
+  to {
+    background-position: 180% 0;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 9px color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+}
+
+/* Radix state-driven enter/exit animations (dialog, collapsible). */
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlayOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes dialogOut {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.97);
+  }
+}
+@keyframes collapsibleDown {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+@keyframes collapsibleUp {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: clip;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 26%, transparent);
+    color: var(--foreground);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+    background-clip: content-box;
+  }
+}
+
+/* Custom utilities are declared with @utility (not @layer utilities) so that
+   Tailwind generates variants for them — `hover:elevate-lg` only exists if the
+   utility is registered this way. */
+@utility glass {
+  background: color-mix(in oklch, var(--card) 70%, transparent);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+@utility elevate {
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-color) / 0.05),
+    0 4px 14px -6px hsl(var(--shadow-color) / 0.09);
+}
+
+@utility elevate-lg {
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-color) / 0.06),
+    0 12px 34px -12px hsl(var(--shadow-color) / 0.18);
+}
+
+/* Light sweep that crosses the element on hover. */
+@utility sheen {
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    translate: -120% 0;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in oklch, var(--primary) 16%, transparent) 50%,
+      transparent 80%
+    );
+    transition: translate 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+
+  &:hover::before {
+    translate: 120% 0;
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    color-mix(in oklch, var(--muted) 55%, var(--card)) 50%,
+    var(--muted) 75%
+  );
+  background-size: 220% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* anime.js reveals start hidden so there is no flash of un-animated content
+   before the scroll observer fires. */
+@utility will-reveal {
+  opacity: 0;
+}
+
+/* The theme toggle drives its own circular wipe, so suppress the default
+   cross-fade and let the incoming snapshot sit on top of the outgoing one. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* Reveal targets are rendered at opacity 0 and lifted in by anime.js. With no
+   scripting there is nothing to lift them, so show them outright. */
+@media (scripting: none) {
+  .will-reveal,
+  [data-word] {
+    opacity: 1 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .will-reveal {
+    opacity: 1 !important;
+  }
+}

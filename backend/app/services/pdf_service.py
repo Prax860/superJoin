@@ -30,7 +30,7 @@ def extract_pages(pdf_bytes: bytes) -> List[Dict]:
 def build_chunks(pages: List[Dict]) -> List[Dict]:
     """Group pages into chunks of ~CHUNK_CHARS so each LLM call sees whole pages.
 
-    A chunk keeps its page markers so Gemini can cite the right page.
+    A chunk keeps its page markers so the model can cite the right page.
     """
     chunks: List[Dict] = []
     current_pages: List[Dict] = []

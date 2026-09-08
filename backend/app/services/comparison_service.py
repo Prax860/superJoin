@@ -1,13 +1,16 @@
 """Compare new facts with retrieved candidates and classify the relationships.
 
-All pairs from one upload are judged in a single Gemini call. Doing one call per
+All pairs from one upload are judged in a single LLM call. Doing one call per
 fact is far more expensive and runs straight into free-tier request limits.
 """
+import logging
 from typing import Dict, List
 
 from app import config
 from app.llm import llm
 from app.services.fact_service import fact_to_text
+
+log = logging.getLogger(__name__)
 
 VALID = {"CORROBORATES", "CONTRADICTS", "RECONCILES", "UNCERTAIN"}
 
@@ -70,6 +73,7 @@ def compare(pairs: List[Dict]) -> List[Dict]:
         judgements = llm.compare_facts(_render(pairs))
     except Exception as exc:
         # LLM failure: record honest uncertainty rather than guessing a relationship.
+        log.warning("Comparison of %d pairs failed: %s", len(pairs), exc)
         return [
             {
                 "fact_a_id": p["fact_a_id"],

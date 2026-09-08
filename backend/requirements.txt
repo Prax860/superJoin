@@ -5,6 +5,13 @@ python-dotenv==1.0.1
 pydantic==2.13.5
 PyMuPDF==1.25.1
 langchain-core==1.6.2
+
+# --- reasoning providers: install the one you use (LLM_PROVIDER) ---
+langchain-ollama==1.1.0
 langchain-groq==1.1.3
-langchain-google-genai==4.4.0
+# langchain-openai
+# langchain-google-genai
+
+langchain-huggingface==1.2.2
+sentence-transformers==6.0.1
 supabase==2.31.0

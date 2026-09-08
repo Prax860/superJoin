@@ -85,7 +85,7 @@ async def upload_document(file: UploadFile = File(...)):
 
     try:
         # 2. fact extraction + evidence verification
-        extracted = fact_service.extract_document_facts(file.filename, pages)
+        extracted, extraction_errors = fact_service.extract_document_facts(file.filename, pages)
         if not extracted:
             client.table("documents").update({"status": "no_facts"}).eq("id", document_id).execute()
             return {"document": document, "facts": [], "relationships": [],
@@ -133,11 +133,19 @@ async def upload_document(file: UploadFile = File(...)):
         client.table("documents").update({"status": "failed"}).eq("id", document_id).execute()
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}") from exc
 
+    message = f"Extracted {len(inserted)} facts and {len(relationships)} relationships."
+    if extraction_errors:
+        message += (
+            f" {len(extraction_errors)} page group(s) could not be processed,"
+            " so this document is only partially covered."
+        )
+
     return {
         "document": {**document, "status": "processed"},
         "facts": _load_facts(client, document_id=document_id),
         "relationships": _load_relationships(client, document_id=document_id),
-        "message": f"Extracted {len(inserted)} facts and {len(relationships)} relationships.",
+        "message": message,
+        "warnings": extraction_errors,
     }
 
 
