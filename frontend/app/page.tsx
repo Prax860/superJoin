@@ -8,12 +8,14 @@ import {
   FileSearch,
   FileText,
   GitCompareArrows,
+  LayoutGrid,
   Layers,
   LayoutDashboard,
   Library,
   RefreshCw,
   ScanLine,
   Search,
+  Share2,
   ServerCrash,
   ShieldCheck,
   Sparkles,
@@ -21,6 +23,8 @@ import {
 import Upload from "@/components/Upload";
 import FactCard from "@/components/FactCard";
 import RelationshipCard from "@/components/RelationshipCard";
+import CorrelationGraph from "@/components/CorrelationGraph";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AnimatedNumber } from "@/components/anim/AnimatedNumber";
 import { SplitText } from "@/components/anim/SplitText";
@@ -53,6 +57,9 @@ export default function Home() {
   const [relationshipPage, setRelationshipPage] = React.useState(1);
   const [factPage, setFactPage] = React.useState(1);
   const [query, setQuery] = React.useState("");
+  // Graph is the default view of the correlations; the card list is one
+  // click away on the ViewSwitch.
+  const [correlationView, setCorrelationView] = React.useState<"graph" | "cards">("graph");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -218,7 +225,7 @@ export default function Home() {
                 />
               ) : (
                 <>
-                  <DocumentGrid documents={slice(documents, documentPage)} />
+                  <DocumentGrid documents={slice(documents, documentPage)} onDeleted={refresh} />
                   <Pagination
                     page={documentPage}
                     total={documents.length}
@@ -234,6 +241,11 @@ export default function Home() {
               eyebrow="Cross-document analysis"
               title="Correlations"
               count={relationships.length}
+              action={
+                relationships.length > 0 ? (
+                  <ViewSwitch value={correlationView} onChange={setCorrelationView} />
+                ) : null
+              }
             >
               {loading ? (
                 <SkeletonGrid />
@@ -245,16 +257,22 @@ export default function Home() {
                 />
               ) : (
                 <>
-                  <RevealList className="grid gap-3.5 2xl:grid-cols-2">
-                    {slice(relationships, relationshipPage).map((relationship) => (
-                      <RelationshipCard key={relationship.id} relationship={relationship} />
-                    ))}
-                  </RevealList>
-                  <Pagination
-                    page={relationshipPage}
-                    total={relationships.length}
-                    onChange={setRelationshipPage}
-                  />
+                  {correlationView === "graph" ? (
+                    <CorrelationGraph relationships={relationships} />
+                  ) : (
+                    <>
+                      <RevealList className="grid gap-3.5 2xl:grid-cols-2">
+                        {slice(relationships, relationshipPage).map((relationship) => (
+                          <RelationshipCard key={relationship.id} relationship={relationship} />
+                        ))}
+                      </RevealList>
+                      <Pagination
+                        page={relationshipPage}
+                        total={relationships.length}
+                        onChange={setRelationshipPage}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </Section>
@@ -302,7 +320,7 @@ export default function Home() {
 
       <footer className="border-t border-border/60 py-6">
         <div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-3 px-5 text-[11.5px] text-muted-foreground sm:px-8 lg:px-12">
-          <span className="font-mono uppercase tracking-[0.14em]">Fact Knowledge Layer</span>
+          <span className="font-mono uppercase tracking-[0.14em]">parPdf</span>
           <span>Every claim carries its page-level evidence.</span>
         </div>
       </footer>
@@ -323,11 +341,11 @@ function TopBar({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: 
     >
       <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-4 px-5 py-3.5 sm:px-8 lg:px-12">
         <div className="flex items-center gap-2.5">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary font-display text-[12px] font-bold text-primary-foreground">
-            FK
+          <span className="grid size-8 place-items-center rounded-lg bg-primary font-display text-[13px] font-bold text-primary-foreground">
+            p
           </span>
           <span className="font-display text-[15px] font-semibold tracking-tight">
-            Fact Knowledge Layer
+            par<span className="text-primary">Pdf</span>
           </span>
         </div>
 
@@ -669,7 +687,13 @@ function DocumentList({ documents }: { documents: Doc[] }) {
 }
 
 /** Card grid used on the full Documents tab so wide screens stay filled. */
-function DocumentGrid({ documents }: { documents: Doc[] }) {
+function DocumentGrid({
+  documents,
+  onDeleted,
+}: {
+  documents: Doc[];
+  onDeleted: () => void;
+}) {
   return (
     <RevealList className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-3">
       {documents.map((doc) => (
@@ -689,6 +713,7 @@ function DocumentGrid({ documents }: { documents: Doc[] }) {
                 </Badge>
               </div>
             </div>
+            <DeleteDocumentButton doc={doc} onDeleted={onDeleted} />
           </div>
         </Card>
       ))}
@@ -701,29 +726,68 @@ function Section({
   title,
   count,
   suffix,
+  action,
   children,
 }: {
   eyebrow: string;
   title: string;
   count: number;
   suffix?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section>
-      <div className="mb-5 flex items-end justify-between gap-4">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
             {eyebrow}
           </p>
           <h2 className="mt-1.5 font-display text-2xl font-semibold tracking-tight">{title}</h2>
         </div>
-        <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
-          {count} {suffix ?? "total"}
-        </span>
+        <div className="flex items-center gap-3">
+          {action}
+          <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
+            {count} {suffix ?? "total"}
+          </span>
+        </div>
       </div>
       {children}
     </section>
+  );
+}
+
+/** Segmented graph / cards switch for the Correlations tab. */
+function ViewSwitch({
+  value,
+  onChange,
+}: {
+  value: "graph" | "cards";
+  onChange: (next: "graph" | "cards") => void;
+}) {
+  const options = [
+    { id: "graph" as const, label: "Graph", icon: Share2 },
+    { id: "cards" as const, label: "Cards", icon: LayoutGrid },
+  ];
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full border border-border bg-card/70 p-1 backdrop-blur-md">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          onClick={() => onChange(option.id)}
+          aria-pressed={value === option.id}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors duration-200",
+            value === option.id
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <option.icon className="size-3.5" />
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -155,6 +155,53 @@ async def get_documents():
     return client.table("documents").select("*").order("id", desc=True).execute().data or []
 
 
+def _count_facts(client, document_id: int) -> int:
+    """Exact fact count for one document, without pulling the rows back."""
+    try:
+        return (
+            client.table("facts")
+            .select("id", count="exact")
+            .eq("document_id", document_id)
+            .limit(1)
+            .execute()
+            .count
+            or 0
+        )
+    except Exception:
+        return 0
+
+
+@router.delete("/documents/{document_id}")
+async def delete_document(document_id: int):
+    """Remove a document and everything derived from it.
+
+    facts, evidence and relationships are all ON DELETE CASCADE from documents
+    (see schema.sql), so a single delete clears the whole subtree.
+    """
+    client = _db()
+
+    existing = (
+        client.table("documents").select("id,filename").eq("id", document_id).execute().data
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="No such document.")
+
+    filename = existing[0]["filename"]
+    facts_removed = _count_facts(client, document_id)
+
+    try:
+        client.table("documents").delete().eq("id", document_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not delete: {exc}") from exc
+
+    return {
+        "deleted": document_id,
+        "filename": filename,
+        "facts_removed": facts_removed,
+        "message": f"Removed '{filename}' and {facts_removed} fact(s).",
+    }
+
+
 @router.get("/facts")
 async def get_facts(document_id: Optional[int] = Query(None), limit: int = Query(200)):
     return _load_facts(_db(), document_id=document_id, limit=limit)

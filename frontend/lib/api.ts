@@ -87,6 +87,31 @@ export const getDocuments = () => request<Doc[]>("/documents");
 export const getFacts = () => request<Fact[]>("/facts");
 export const getRelationships = () => request<Relationship[]>("/relationships");
 
+/**
+ * Removes a document and everything derived from it. The cascade lives in the
+ * database (facts, evidence and relationships are ON DELETE CASCADE), so one
+ * call clears the whole subtree.
+ */
+export async function deleteDocument(id: number) {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/documents/${id}`, {
+      method: "DELETE",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    throw new Error(`Could not reach the API at ${API_URL}`);
+  }
+  if (!response.ok) {
+    throw new Error((await errorMessage(response)) || `Delete failed: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    message: string;
+    filename: string;
+    facts_removed: number;
+  }>;
+}
+
 export type UploadResult = { message: string; warnings?: string[] };
 
 /**

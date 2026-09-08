@@ -26,7 +26,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fact Knowledge Layer",
+  title: "parPdf",
   description: "Extract facts from PDFs and compare them across documents.",
 };
 

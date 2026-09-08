@@ -1,20 +1,22 @@
-# Superjoin Fact Knowledge Layer
+# parPdf — a Fact Knowledge Layer for PDFs
 
-A fact knowledge layer for PDFs. Upload a document, and the system extracts structured facts
-with page-level evidence, stores them in Supabase (pgvector), then compares each new fact with
-semantically similar facts already extracted from *other* documents.
+Upload a PDF and the system extracts structured facts, links every fact to a verbatim quote on
+a real page of the source document, stores them in Supabase (pgvector), then compares each new
+fact against semantically similar facts already extracted from *other* documents.
 
 ```
 FACT -> EVIDENCE -> RELATED FACT -> RELATIONSHIP -> EXPLANATION
 ```
 
-It is not a chatbot. There is no chat box, only documents, facts, evidence and relationships.
+It is not a chatbot. There is no chat box — only documents, facts, evidence and relationships.
+Nothing is keyed off filenames or hard-coded schemas: what counts as a fact is decided per
+chunk by the model, and every field except subject/predicate/value is optional.
 
 ## Stack
 
 | Layer     | Choice                                        |
 |-----------|-----------------------------------------------|
-| Frontend  | Next.js (App Router), React, TypeScript, Tailwind v4, Radix UI, anime.js |
+| Frontend  | Next.js (App Router), React, TypeScript, Tailwind v4, Radix UI, anime.js, d3-force |
 | Backend   | Python, FastAPI, PyMuPDF                      |
 | LLM       | Pluggable: Ollama / Groq / OpenAI / Gemini    |
 | Embedding | `BAAI/bge-base-en-v1.5`, local, 768 dims      |
@@ -106,6 +108,7 @@ same folder to see cross-document relationships.
 | GET    | `/documents`         | Uploaded documents and their status           |
 | GET    | `/facts`             | Facts with their evidence (`?document_id=`)   |
 | GET    | `/relationships`     | Relationships with both facts expanded        |
+| DELETE | `/documents/{id}`    | Remove a document and everything derived from it |
 
 Processing is synchronous - no queues, no workers.
 
@@ -138,8 +141,25 @@ Processing is synchronous - no queues, no workers.
    to check subject, metric, period, geography, scope, unit, definition and qualifiers before
    labelling each pair `CORROBORATES`, `CONTRADICTS`, `RECONCILES` or `UNCERTAIN`, with a short
    explanation. Anything the model returns outside those four labels is stored as `UNCERTAIN`.
-7. **Display.** The frontend shows facts with their evidence and a side-by-side relationship view
-   with a "Why?" explanation.
+7. **Display.** The frontend shows facts with their evidence, and presents cross-document
+   relationships two ways:
+
+   * **Graph** (default) — a force-directed view (`d3-force`) where every fact taking part in a
+     relationship is a node and every relationship an edge. Node colour is the source document, so
+     a cross-document link reads as an edge between two colours; node size is how many links a fact
+     has; a dashed red ring marks a fact whose quote could not be located in the PDF. Edges are
+     coloured by verdict and can be filtered by type. Drag a node to rearrange, click an edge to see
+     both facts and the model's reasoning in the side panel.
+   * **Cards** — the paginated side-by-side list with the "Why?" explanation, one click away on the
+     Graph / Cards switch.
+
+   The graph is a *view*, not the answer: the reasoning still comes from the grounded facts and the
+   comparison step behind it.
+
+8. **Managing the layer.** Each document card carries a delete icon. Removing a document cascades to
+   its facts, their evidence and every relationship touching it (`ON DELETE CASCADE` in
+   [schema.sql](backend/schema.sql)), behind a confirmation dialog. Useful for retiring a document
+   that was ingested under different extraction settings before uploading it again.
 
 ## The four required cases
 
