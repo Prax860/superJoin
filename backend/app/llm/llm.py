@@ -34,7 +34,7 @@ class ExtractedFact(BaseModel):
     scope: Optional[str] = Field(None, description="e.g. 'consolidated', 'standalone', 'express parcel segment'")
     qualifiers: Optional[str] = Field(None, description="e.g. 'adjusted', 'estimated', 'provisional'")
     original_text: Optional[str] = Field(None, description="Short paraphrase-free restatement of the fact")
-    page_number: int = Field(description="The [PAGE n] marker the fact came from")
+    page_number: int = Field(description="Number on the '--- PAGE n ---' marker the fact came from")
     evidence_text: str = Field(description="Verbatim sentence copied from that page, no rewording")
     confidence: float = Field(0.7, description="0-1 confidence that the fact was read correctly")
 
@@ -121,8 +121,13 @@ PACKAGES = {
 }
 
 
+@lru_cache(maxsize=1)
 def _chat() -> BaseChatModel:
-    """The chat model for extraction and comparison, per LLM_PROVIDER."""
+    """The chat model for extraction and comparison, per LLM_PROVIDER.
+
+    Cached: rebuilding ChatOllama for every batch was pure overhead once a
+    document became a dozen or more calls.
+    """
     config.require_env()
     try:
         return BUILDERS[config.LLM_PROVIDER]()
@@ -162,9 +167,22 @@ EXTRACTION_PROMPT = ChatPromptTemplate.from_messages(
             "- Extract concrete, checkable facts: numbers, percentages, monetary amounts, "
             "dates, named measures. Skip marketing language and opinions.\n"
             "- evidence_text MUST be copied verbatim from the page text. Never invent or reword it.\n"
-            "- page_number MUST be the [PAGE n] marker the evidence appears under.\n"
-            "- Fill time_period, geography, scope, unit and qualifiers only when the document "
-            "states or clearly implies them. Leave them empty otherwise - do not guess.\n"
+            "- The text is split by '--- PAGE n ---' markers. page_number MUST be the "
+            "number on the marker the evidence sits under. A batch spans several "
+            "pages, so read the markers carefully and spread facts across them.\n"
+            "- time_period, geography, scope and unit are what make two facts comparable "
+            "across documents. A bare number with no period or scope cannot be "
+            "checked against anything, so work hard to fill them.\n"
+            "- The period or scope is often NOT in the same sentence: take it from the "
+            "table column header, the section heading, the statement title "
+            "('Consolidated Statement of Profit and Loss'), or the reporting period the "
+            "page covers. Use that context.\n"
+            "- scope means consolidated vs standalone, group vs segment, reported vs "
+            "adjusted, annual vs quarterly. Record it whenever the document makes it "
+            "clear, because a difference in scope is what separates a real "
+            "contradiction from a reconcilable one.\n"
+            "- Still do not invent: if the document genuinely never states a field, "
+            "leave it empty rather than guessing.\n"
             "- Return at most {max_facts} of the most meaningful facts.\n"
             "- Keep evidence_text to a single sentence, under 200 characters.\n\n"
             "Keep the fields separate. For the sentence "
@@ -191,10 +209,15 @@ COMPARISON_PROMPT = ChatPromptTemplate.from_messages(
             "- CORROBORATES: same context, equivalent value (allow rounding and unit "
             "conversions such as '$5 billion' vs '$5,000 million').\n"
             "- CONTRADICTS: same context in every respect, but values genuinely disagree.\n"
-            "- RECONCILES: values differ, and the difference is explained by a contextual "
-            "difference (different period, region, segment, definition, unit).\n"
+            "- RECONCILES: the two facts describe the SAME measure, the values differ, and "
+            "the difference is explained by a stated contextual difference (different "
+            "period, region, segment, definition, unit). Do not use RECONCILES for two "
+            "facts that simply measure different things - that is UNCERTAIN.\n"
             "- UNCERTAIN: not enough information to decide, or the facts are unrelated.\n\n"
-            "A different number is NOT automatically a contradiction. Judge EVERY pair you are "
+            "A different number is NOT automatically a contradiction. But do not avoid "
+            "CONTRADICTS out of caution either: when the subject, metric, period and "
+            "scope really do line up and the values still disagree beyond rounding, "
+            "label it CONTRADICTS. Judge EVERY pair you are "
             "given, return exactly one judgement per pair_id, and keep each explanation to "
             "one sentence under 160 characters.",
         ),
@@ -203,9 +226,19 @@ COMPARISON_PROMPT = ChatPromptTemplate.from_messages(
 )
 
 
+@lru_cache(maxsize=1)
+def _extraction_chain():
+    """Prompt + structured-output chain, composed once and reused."""
+    return EXTRACTION_PROMPT | _chat().with_structured_output(ExtractedFacts)
+
+
+@lru_cache(maxsize=1)
+def _comparison_chain():
+    return COMPARISON_PROMPT | _chat().with_structured_output(Judgements)
+
+
 def extract_facts(filename: str, chunk: str, max_facts: int = 0) -> List[ExtractedFact]:
-    chain = EXTRACTION_PROMPT | _chat().with_structured_output(ExtractedFacts)
-    result = chain.invoke({
+    result = _extraction_chain().invoke({
         "filename": filename,
         "chunk": chunk,
         "max_facts": max_facts or config.MAX_FACTS_PER_CHUNK,
@@ -215,6 +248,5 @@ def extract_facts(filename: str, chunk: str, max_facts: int = 0) -> List[Extract
 
 def compare_facts(pairs: str) -> List[Judgement]:
     """One LLM call judges every candidate pair from an upload."""
-    chain = COMPARISON_PROMPT | _chat().with_structured_output(Judgements)
-    result = chain.invoke({"pairs": pairs})
+    result = _comparison_chain().invoke({"pairs": pairs})
     return list(result.judgements) if result else []

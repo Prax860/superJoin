@@ -117,17 +117,33 @@ def extract_document_facts(filename: str, pages: List[Dict]) -> Tuple[List[Dict]
     caller is told about it so a partial result is never reported as a full one.
     """
     page_map = pdf_service.pages_as_map(pages)
-    chunks = pdf_service.build_chunks(pages)
+    batches = pdf_service.build_batches(pages)
 
     facts: List[Dict] = []
     errors: List[str] = []
 
-    for chunk in chunks:
-        try:
-            extracted = llm.extract_facts(filename, chunk["text"])
-        except Exception as exc:  # a single bad chunk should not kill the upload
-            log.warning("Fact extraction failed on pages %s: %s", chunk["page_numbers"], exc)
-            errors.append(str(exc))
+    log.info("PDF pages: %d | extraction batches: %d", len(pages), len(batches))
+
+    for index, chunk in enumerate(batches, start=1):
+        span = chunk["page_numbers"]
+        label = f"{span[0]}-{span[-1]}" if span else "?"
+        log.info("Processing batch %d/%d: pages %s", index, len(batches), label)
+
+        extracted = None
+        # One retry: a malformed structured-output response is often transient,
+        # and a batch now covers ~10 pages, so losing one is expensive.
+        for attempt in range(config.BATCH_RETRIES + 1):
+            try:
+                extracted = llm.extract_facts(filename, chunk["text"])
+                break
+            except Exception as exc:
+                if attempt < config.BATCH_RETRIES:
+                    log.warning("Batch %d (pages %s) failed (%s); retrying",
+                                index, label, type(exc).__name__)
+                    continue
+                log.warning("Batch %d (pages %s) failed after retry: %s", index, label, exc)
+                errors.append(f"pages {label}: {exc}")
+        if extracted is None:
             continue
 
         for item in extracted:

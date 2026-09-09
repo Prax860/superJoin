@@ -14,7 +14,12 @@ chunk by the model, and every field except subject/predicate/value is optional.
 
 ## Demo
 
-[Watch the demo video on Google Drive](https://drive.google.com/file/d/1lj6qw4QijGE0et0uRyvF0uWQcu7G1YxJ/view?usp=sharing)
+[Watch the demo video on Google Drive](https://drive.google.com/file/d/1qcGVLdiRj7j6pBUc8u2VKCllLHqTCGOb/view?usp=sharing)
+
+<video controls width="720">
+   <source src="demo_SJ_prakhar.mp4" type="video/mp4">
+   Your browser does not support the video tag. [Download the demo video](demo_SJ_prakhar.mp4).
+</video>
 
 ## Stack
 
@@ -119,8 +124,14 @@ Processing is synchronous - no queues, no workers.
 ## Approach
 
 1. **PDF to text.** PyMuPDF reads the file page by page
-   ([pdf_service.py](backend/app/services/pdf_service.py)). Pages are grouped into chunks that
-   carry `[PAGE n]` markers, so a page number is attached to every piece of text the LLM sees.
+   ([pdf_service.py](backend/app/services/pdf_service.py)). Pages are grouped into **extraction
+   batches of about `BATCH_PAGES` (default 10) pages**, each labelled `--- PAGE n ---` so a page
+   number is attached to every piece of text the model sees. Batching by page count rather than
+   character count keeps a 100-page PDF to ~10-15 LLM calls, which is what makes reading the whole
+   document affordable - `MAX_PAGES` and `MAX_CHUNKS` therefore default to 0 (no truncation).
+   `BATCH_MAX_CHARS` closes a batch early when a run of text-heavy pages would build too large a
+   prompt, and a page bigger than that is split into parts rather than truncated. A batch that
+   fails is retried once before its pages are given up on, so one bad batch never fails the upload.
 2. **Fact extraction.** A LangChain prompt with `with_structured_output(...)` returns a
    Pydantic `ExtractedFacts` object: subject, predicate, value, unit, time period, geography,
    scope, qualifiers, confidence, page number and a verbatim evidence quote.
@@ -133,11 +144,14 @@ Processing is synchronous - no queues, no workers.
    lakh, million, crore, billion, trillion - plus currency and percent, and stores a
    `normalized_value` in a base unit. `$5 billion` and `$5,000 million` both become
    `5e9 USD`. The original string is always preserved in `facts.value`.
-5. **Retrieval.** Each fact is embedded locally with `bge-small-en-v1.5` (384-dim, normalized
-   for cosine) and matched against stored facts with the `match_facts`
-   pgvector function (cosine distance), excluding the current document. Only the top 3 candidates
-   per fact are kept, and anything below a similarity threshold is dropped without asking the
-   model - never every fact against every other fact.
+5. **Retrieval.** Each fact is embedded locally and matched against stored facts with the
+   `match_facts` pgvector function (cosine distance), excluding the current document. Only the top
+   `TOP_K_SIMILAR` candidates per fact are kept, and anything below `SIMILARITY_THRESHOLD` (0.82)
+   is dropped without asking the model - never every fact against every other fact.
+
+   That threshold matters more than it looks. At 0.75 unrelated metrics ("customers served" vs
+   "revenue from operations") cleared the bar and consumed the whole pair budget, so genuine
+   same-metric comparisons never got asked about.
 6. **Comparison.** All surviving pairs from one upload are judged in a **single** LLM call
    ([comparison_service.py](backend/app/services/comparison_service.py)). The pair budget is
    filled rank by rank - every fact's best match first - so it is spread across the document

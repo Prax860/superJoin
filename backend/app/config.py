@@ -42,7 +42,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 # Cap on output tokens per call. Keeps hosted providers inside per-minute
 # limits and stops a local model from rambling. 0 means "no explicit cap".
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "900"))
-MAX_FACTS_PER_CHUNK = int(os.getenv("MAX_FACTS_PER_CHUNK", "4"))
+MAX_FACTS_PER_CHUNK = int(os.getenv("MAX_FACTS_PER_CHUNK", "12"))
 
 # Which env var holds the key for each provider (ollama needs none).
 PROVIDER_KEYS = {
@@ -62,15 +62,32 @@ EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "768"))
 
 # How many pages of a PDF we send to the LLM, and how many similar facts we
 # compare a new fact against. Kept small so a demo upload stays fast.
-MAX_PAGES = int(os.getenv("MAX_PAGES", "40"))
+# 0 = no limit. Batching by page count (below) keeps a 100-page PDF to ~10-15
+# LLM calls, so truncating the document is no longer needed for speed.
+MAX_PAGES = int(os.getenv("MAX_PAGES", "0"))
 CHUNK_CHARS = int(os.getenv("CHUNK_CHARS", "4500"))
-MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "6"))
+MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "0"))
+
+# --------------------------------------------------------------------------
+# Extraction batching
+#
+# One LLM call per ~BATCH_PAGES pages, instead of one per CHUNK_CHARS of text.
+# BATCH_MAX_CHARS is the safety valve so a run of text-heavy pages cannot
+# build an enormous prompt.
+# --------------------------------------------------------------------------
+BATCH_PAGES = int(os.getenv("BATCH_PAGES", "10"))
+BATCH_MAX_CHARS = int(os.getenv("BATCH_MAX_CHARS", "24000"))
+# A batch that fails is retried this many times before its pages are skipped.
+BATCH_RETRIES = int(os.getenv("BATCH_RETRIES", "1"))
 TOP_K_SIMILAR = int(os.getenv("TOP_K_SIMILAR", "3"))
-MAX_COMPARED_FACTS = int(os.getenv("MAX_COMPARED_FACTS", "25"))
+MAX_COMPARED_FACTS = int(os.getenv("MAX_COMPARED_FACTS", "60"))
 # Candidates below this cosine similarity are not worth asking the LLM about.
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.75"))
+# Raised from 0.75: at that level unrelated metrics ('customers served' vs
+# 'revenue from operations') cleared the bar and consumed the pair budget,
+# leaving no room for genuine same-metric comparisons.
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.82"))
 # All pairs are judged in ONE LLM call, so this caps the size of that prompt.
-MAX_PAIRS = int(os.getenv("MAX_PAIRS", "10"))
+MAX_PAIRS = int(os.getenv("MAX_PAIRS", "24"))
 
 
 def chat_model_name() -> str:
